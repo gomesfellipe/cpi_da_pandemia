@@ -40,3 +40,5 @@ vignettes/*.pdf
 
 .DStore
 cpidapandemia.sqlite
+cpi_da_pandemia_sample.rds
+cpi_da_pandemia_sample4mi.rds

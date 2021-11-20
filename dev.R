@@ -7,9 +7,11 @@ library(igraph)
 library(ggraph)
 library(tidygraph)
 
-df <- read_rds('cpi_da_pandemia_sample.rds')
+df <- read_rds('cpi_da_pandemia_sample4mi.rds')
 
-sw <- paste0(c('us$'), collapse = "|")
+# stopwords
+# sw <- paste0(c('us$'), collapse = "|")
+
 # Preparar textos
 df <- df %>% 
   transmute(tweet = text %>% 
@@ -20,7 +22,7 @@ df <- df %>%
              str_remove_all("http://") %>% # links
            str_remove_all('[0-9]') %>% 
            str_remove_all("[^\x01-\x7F]") %>% # remover unicode
-           str_remove_all("@\\w+") %>% # remover @...
+           #str_remove_all("@\\w+") %>% # remover @...
            str_remove_all("#\\w+") %>% # remover #...
            str_replace_all("(.*?)($|(@|#)|[^[:punct:]]+?)(.*?)", "\\2") %>% # remover caracter especial menos @ ou #
            str_remove_all("[[:cntrl:]]") %>% 
@@ -34,7 +36,7 @@ df <- df %>%
 df <- df %>%
  mutate(tweet = tweet %>%
           str_replace_all("$", "s"),
-          str_replace_all("+", " "),
+          str_replace_all("\+", " "),
           str_replace_all("@", "a")
         )
 
@@ -103,7 +105,7 @@ weighted_edgelist <- df %>%
   filter_at(1:2, ~.x != "G1") %>% 
   group_by(item1, item2) %>%
   summarise(n=n()) %>% 
-  filter(n>2)
+  filter(n>100)
 # news_graph <- weighted_edgelist %>%  graph_from_data_frame(directed = F)
 # write_graph(news_graph, 'news_graph.graphml', 'graphml')
 a <- grid::arrow(type = "closed", length = unit(.15, "inches"))

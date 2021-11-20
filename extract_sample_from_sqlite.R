@@ -12,9 +12,9 @@ df_full <- dbGetQuery(conn = con,
                                          " FROM ", tables[[1]], 
                                          " WHERE retweet_name IS NULL",
                                          " ORDER BY RANDOM()",
-                                         " LIMIT 400000")) %>% 
+                                         " LIMIT 4000000")) %>% 
   as_tibble()
 
 
 
-saveRDS(df_full, "cpi_da_pandemia_sample.rds")
+saveRDS(df_full, "cpi_da_pandemia_sample4mi.rds")
