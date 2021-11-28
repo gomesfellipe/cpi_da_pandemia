@@ -1,0 +1,269 @@
+---
+title: "Vou te provar que da para fazer grafos bonitos em R!"
+author: "Fellipe Gomes"
+date: "11/28/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = F, warning = F, error = F)
+```
+
+<!-- era uma vez -->
+<!-- todos os dias -->
+<!-- um certo dia -->
+<!-- por causa disso -->
+<!-- por causa disso -->
+<!-- ate que finalmente -->
+
+# Introdução e contexto
+
+Durante os anos de 2020 e 2021 fiz um [MBA Executivo em Business Analytics e Big Data](https://educacao-executiva.fgv.br/df/brasilia/cursos/mba-pos-graduacao/mba-presencial/mba-executivo-em-business-analytics-e-big-data) na FGV e uma das disciplinas gostei bastante abordou a análise de mídias sociais com técnicas de mineração de texto e processamento de linguagem natural.
+
+No trabalho final fomos desafiados a extrair dados da internet via api ou scraping, aplicar a metodologia apropriada para extrair informações de interesse e contruir um Grafo.
+
+## O que são Grafos?
+
+📎 Segundo o Wikipedia: 
+
+> "A teoria dos grafos é um ramo da matemática que estuda as relações entre os objetos de um determinado conjunto"
+
+## Como contruir um?
+
+Aprendemos a mexer no [Gephi](https://gephi.org/) para a contrução desses Grafos (ferramenta incrível, diga-se de passagem) porém ouvi diversas vezes, tanto dentro quanto fora da FGV, que R e Python eram muito limitados para construção de Grafos bonitos e que esse software sempre a melhor opção.
+
+Apesar do enorme potencial do Gephi, fiquei um pouco entediado estudando-o pois não sou grande fã de ferramentas *point-and-click* e quando o professor falou que a escolha da ferramenta para a construção do Grafo era livre, resolvi tentar fazê-lo em R!
+
+## Para que servem os grafos
+
+Como esse gráfico deu mais de trabalho do que eu esperava e fiquei bem satisfeito com o resultado final, resolvi procurar outros dados e fazer uma nova análise para praticar e publicar aqui no blog, espero que gostem!
+
+# Carregar dependencias
+
+```{r}
+library(rvest) # web scrapping
+library(dplyr) # manipulate data
+library(purrr) # functional prog
+library(stringr) # str toolkit
+library(spacyr) # ner
+library(igraph) # base graph
+library(tidygraph) # tidy graph
+library(ggraph) # plot graph
+```
+
+
+```{r}
+scrape_post_links <- function(site) {
+  cat(paste0(site, "\n"))
+  
+  source_html <- read_html(site)
+  
+  links <- source_html %>%
+    html_nodes("div.widget--info__text-container") %>%
+    html_nodes("a") %>%
+    html_attr("href")
+  
+  links <- links[!is.na(links)]
+  
+  return(links)
+}
+
+scrape_post_body <- function(site) { 
+  
+  text <- tryCatch({
+    cat(paste0(site, "\n"))
+    body <- site %>%
+      read_html %>%
+      html_nodes("article") %>%
+      html_nodes("p.content-text__container")  %>%
+      html_text %>% 
+      paste(collapse = '')
+    
+  }, error = function(e){
+    cat(paste("ERRO 404", "\n"))
+    body <- NA
+  })
+  
+  return(body)
+}
+
+get_adjacent_list <- function(edge_list) {
+  gtools::combinations(length(edge_list), 2, edge_list)  
+}
+```
+
+# Fonte dos dados
+
+```{r, eval = FALSE}
+# raiz
+root <- "https://g1.globo.com/busca/?q=economia+brasil"
+
+# link das proximas 100 paginas
+all_pages <- c(root, paste0(root, "&page=", 1:50))
+
+# coletar os links dos posts de cada pagina
+all_links <- map(all_pages, scrape_post_links) %>% unlist()
+
+# extrair urls
+cleaned_links <- map_chr(all_links, ~{
+  .x %>% 
+    urltools::param_get() %>% 
+    pull(u) %>% 
+    urltools::url_decode()
+})
+
+# reter apenas links que falam de economia
+cleaned_links <- cleaned_links %>% .[str_detect(.,  "g1.globo.com/economia")]
+
+# nao reter links do globoplay
+cleaned_links <- cleaned_links %>% .[!str_detect(.,  "globoplay")]
+
+# coletar conteudo de cada link
+data <- map_chr(cleaned_links, scrape_post_body) %>% unique()
+```
+
+# NER - Named Entity Recognition
+
+Configurar o `spacyr` para utilizar o modelo pré treinado para reconhecimento de entidades em portugues:
+
+```{r, eval = F}
+spacyr::spacy_install()
+spacy_download_langmodel("pt_core_news_sm")
+```
+
+```{r, eval = F}
+spacy_initialize(model="pt_core_news_sm")
+```
+
+
+```{r, eval = F}
+entities <- spacy_extract_entity(data)
+entities
+```
+
+
+```{r, eval = F}
+filtered_entities <- 
+  entities %>% 
+  filter(ent_type=='ORG'|ent_type=='PER')
+
+filtered_entities %>% count(text, sort = T) %>% head(50)
+```
+
+```{r, eval = F, echo = F}
+saveRDS(filtered_entities, "filtered_entities.rds")
+```
+
+# Obter elementos do Grafo
+
+```{r}
+filtered_entities <- readRDS("filtered_entities.rds")
+```
+
+
+```{r}
+# Criar lista de arestas (edges or links)
+edges <- 
+  filtered_entities %>%
+  group_by(doc_id) %>%
+  summarise(entities = paste(text, collapse = ",")) %>% 
+  pull(entities) %>% 
+  str_split(",") %>% 
+  map(~unique(unlist(.x))) %>% 
+  .[map_dbl(., length) != 1]
+```
+
+```{r}
+adjacent_matrix <-
+  map_dfr(edges, ~ 
+                   as.data.frame(get_adjacent_list(.x))) %>% 
+  as_tibble() %>% 
+  set_names(c('item1', 'item2'))
+```
+
+```{r}
+adjacent_matrix <- adjacent_matrix %>% 
+  mutate_all(~.x %>% 
+               str_replace_all("Fundação Getulio Vargas", "FGV") %>% 
+               str_replace_all("FMI", "Fundo Monetário Internacional") %>% 
+               str_replace_all("Paulo Guedes", "Guedes") %>% 
+               str_replace_all("Estados Unidos( da Am[ée]rica)?", "EUA") %>% 
+               str_replace_all("Donald Trump", "Trump") %>% 
+               str_replace_all("CEF", "Caixa Econômica Federal") %>% 
+               str_replace_all("CMN", "Conselho Monetário Nacional") %>% 
+               str_replace_all("Cl[áa]udio Considera", "Cláudio") %>% 
+               str_replace_all("OCDE", "Organização para a Cooperação e\n Desenvolvimento Econômico") %>% 
+               str_replace_all("(André )?Brandão", "André Brandão") %>% 
+               str_replace_all("(Maur[ií]cio )?Macri", "Mauricio Macri") %>% 
+               str_remove_all("^(?i)(no|de)\\s")
+             
+             )
+
+entities_to_drop <- c("Assine", "Google Podcasts", "Spotify", "Focus do",
+                      "Focus", "Segundo", "Ninguém", "Haverá", "G1",
+                      "Começa", "LEIA", "R$", "Considera", "Caixa Aqui")
+
+weighted_edgelist <- adjacent_matrix %>%
+  filter_at(1:2, ~ !.x %in% entities_to_drop) %>% 
+  group_by(item1, item2) %>%
+  summarise(n=n()) %>% 
+  ungroup() %>% 
+  filter(n>3) 
+```
+
+
+```{r}
+a <- grid::arrow(type = "closed", length = unit(.15, "inches"))
+subt <- weighted_edgelist
+vert <- subt %>% tidyr::gather(item, word, item1, item2) %>%
+  group_by(word) %>% summarise(n = sum(n))
+
+```
+
+```{r}
+# Obter componentes para colorir os clusters do grafo
+tidy_graph_components <- 
+  subt  %>%
+  select(item1, item2) %>% 
+  as.matrix() %>%
+  graph.edgelist(directed = FALSE)  %>%
+  as_tbl_graph() %>% 
+  activate("edges") %>% 
+  mutate(weight = subt$n) %>% 
+  activate("nodes") %>% 
+  # ttps://tidygraph.data-imaginist.com/reference/group_graph.html # tipos de agrupamentos
+  mutate(component = as.factor(tidygraph::group_edge_betweenness()))
+# Atualizar vertice para incluir componentes
+vert <- vert %>% 
+  left_join( as.data.frame(activate(tidy_graph_components, "nodes")) %>% 
+               rename(word = name))
+```
+
+```{r}
+set.seed(1)
+subt %>%
+  graph_from_data_frame(vertices = vert) %>%
+  # https://www.data-imaginist.com/2017/ggraph-introduction-layouts/ # layouts
+  ggraph(layout = "fr") +
+  geom_edge_link(aes(edge_alpha = n, edge_width = n), show.legend = FALSE,
+                 arrow = a, end_cap = circle(.07, 'inches'), color = "#D9D9D9A0") +
+  geom_node_point() + 
+  geom_node_text(aes(label = name, size = n, alpha = n, color = component),# color = "#EAFF00",
+                 repel = TRUE, point.padding = unit(0.2, "lines"),
+                 show.legend = F) +
+  scale_size(range = c(2,10)) +
+  scale_alpha(range = c(0.5,1))+ 
+  theme_dark() + 
+  theme(
+    panel.background = element_rect(fill = "#2D2D2D"),
+    legend.key = element_rect(fill = "#2D2D2D")
+  ) +
+  theme_graph(background = "black")
+```
+
+```{r}
+ggsave(filename = 'grafo.png', width = 8, height = 6, device='png', dpi=700)
+```
+
+![](grafo.png){width=100%}
+
