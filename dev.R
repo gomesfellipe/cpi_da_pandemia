@@ -72,8 +72,10 @@ edges <-
   filtered_entities %>%
   group_by(doc_id) %>%
   summarise(entities = paste(text, collapse = ",")) # remove duplicated for the same document
+
 edges <- lapply(str_split(edges$entities, ","),
                 function(t){unique(unlist(t))}) # Auxiliary functions for creating adjancnt
+
 edges <- edges[map_dbl(edges, length) != 1]
 get_adjacent_list <- function(edge_list) {
   
