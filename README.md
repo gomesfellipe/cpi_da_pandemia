@@ -16,4 +16,4 @@ O terceiro script `03_build_graph.R` termina o trabalho. Ele carrega o cache sal
 
 Espero que gostem!
 
-![](grafo.png){width=100%}
+![](grafo.png)
